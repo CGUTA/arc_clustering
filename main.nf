@@ -79,7 +79,10 @@ process clustering {
 ordering_rows = Channel.create()
 ordering_columns = Channel.create()
 
-clustering.choice(ordering_rows, ordering_columns) { it[0] === "rows" ? 0 : 1 }
+log1 = Channel.create()
+
+log1.println { it }
+clustering.choice(ordering_rows, ordering_columns) { it[0] == 'rows' ? 0 : 1 }
 
 process ordering_rows {
 	
@@ -88,7 +91,7 @@ process ordering_rows {
 	file matrix from ordering_rows_mtx
 
 	output:
-	set mode, file(ordered_matrix)
+	set mode, file("ordered_matrix.tsv")
 
 	when:
 	params.rows | params.cols
@@ -99,9 +102,9 @@ process ordering_rows {
 	library(data.table)
 	library(magrittr)
 
-	clusters <- readRDS($cluster_data)
+	clusters <- readRDS("$cluster_data")
 
-	fread("$matrix") %>% .[clusters["order"],] %>%
+	fread("$matrix") %>% .[clusters[["order"]],] %>%
   	fwrite("ordered_matrix.tsv", sep="\t")
 
 	"""
@@ -110,11 +113,11 @@ process ordering_rows {
 process ordering_columns {
 	
 	input:
-	set mode, file(cluster_data) from ordering_columns
+	set mode, file(cluster_data) from ordering_columns.tap(log1)
 	file matrix from ordering_columns_mtx
 
 	output:
-	file ordered_matrix
+	file "ordered_matrix.tsv"
 
 	when:
 	params.rows | params.cols
@@ -125,9 +128,9 @@ process ordering_columns {
 	library(data.table)
 	library(magrittr)
 
-	clusters <- readRDS($cluster_data)
+	clusters <- readRDS("$cluster_data")
 
-	fread("$matrix") %>% .[,c(1, clusters["order"] + 1)] %>%
+	fread("$matrix") %>% .[,c(1, clusters[["order"]] + 1)] %>%
   	fwrite("ordered_matrix.tsv", sep="\t")
 
 	"""
