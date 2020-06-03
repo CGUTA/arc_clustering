@@ -1,0 +1,13 @@
+README
+
+Clustering pipeline
+
+Required Arguments:
+--matrix (file with delimited matrix)
+--rows (should rows be clustered
+--columns (should columns be clustered)
+
+TODO
+Allow multiple clustering methods (current is ward.D2)\
+Allow multiple distance functions (such as CLI Dcor)
+Allow umap with DBSCAn?

@@ -1,44 +1,17 @@
-to_transpose = Channel.create()
-ordering_rows_mtx = Channel.create()
-ordering_columns_mtx = Channel.create()
 
-input_mtx = Channel.fromPath("${params.matrix}")
-				.tap(to_transpose)
-				.tap(ordering_rows_mtx)
-				.tap(ordering_columns_mtx)
-				.map { x -> tuple('cols', x) }
 
-process transpose {
-  input:
-  file matrix from to_transpose
+Channel.fromPath("${params.matrix}")
+.into{ input_mtx ; ordering_mtx}
 
-  output:
-  set val("rows"), file('transposed_matrix.tsv') into transposed_mtx
-
-  when:
-  params.rows
-
-  script:
-  """
-  #!/usr/bin/env Rscript
-
-  library(data.table)
-  library(magrittr)
-
-  fread("$matrix") %>% melt(id.vars="V1") %>% dcast(variable ~ V1) %>%
-  fwrite("transposed_matrix.tsv", sep="\t")
-
-  """
-}
 
 
 process distance_matrix {
 	
 	input:
-	set mode, file(matrix) from input_mtx.mix(transposed_mtx)
+	file(matrix) from input_mtx
 
 	output:
-	set mode, file("distance.tsv") into distance
+	file("distance.tsv") into distance
 
 	"""
 	#!/usr/bin/env Rscript
@@ -47,7 +20,12 @@ process distance_matrix {
 	library(magrittr)
 
 	essentialome <- fread("$matrix")
-	essentialome[,-1] %>% dist %>% as.matrix %>% as.data.table %>% fwrite("distance.tsv", sep="\t")
+
+	if("$params.cols" != "null"){
+		essentialome = essentialome %>% melt(id.vars="V1") %>% dcast(variable ~ V1)
+	}
+
+	essentialome[,-1] %>% dist %>% as.matrix %>% as.data.table(keep.rownames=TRUE) %>% fwrite("distance.tsv", sep="\t")
 
 	"""
 }
@@ -55,10 +33,10 @@ process distance_matrix {
 process clustering {
 	
 	input:
-	set mode, file(distance_matrix) from distance
+	file(distance_matrix) from distance
 
 	output:
-	set mode, file("clustering.rds") into clustering
+	file("clustering.rds") into clustering
 
 	"""
 	#!/usr/bin/env Rscript
@@ -67,6 +45,7 @@ process clustering {
 	library(magrittr)
 
 	clusters <- fread("$distance_matrix") %>% 
+	.[, -1] %>%
 	as.matrix %>%
 	as.dist %>%
 	hclust(method = "ward.D2")
@@ -76,25 +55,16 @@ process clustering {
 	"""
 }
 
-ordering_rows = Channel.create()
-ordering_columns = Channel.create()
 
-log1 = Channel.create()
-
-log1.println { it }
-clustering.choice(ordering_rows, ordering_columns) { it[0] == 'rows' ? 0 : 1 }
-
-process ordering_rows {
+process ordering{
+	publishDir "$params.outdir/", mode: 'copy', saveAs: { filename -> "${params.id}_$filename" }
 	
 	input:
-	set mode, file(cluster_data) from ordering_rows
-	file matrix from ordering_rows_mtx
+	file(cluster_data) from clustering
+	file matrix from ordering_mtx
 
 	output:
-	set mode, file("ordered_matrix.tsv")
-
-	when:
-	params.rows | params.cols
+	file("*_ordered_matrix.tsv")
 
 	"""
 	#!/usr/bin/env Rscript
@@ -104,34 +74,15 @@ process ordering_rows {
 
 	clusters <- readRDS("$cluster_data")
 
-	fread("$matrix") %>% .[clusters[["order"]],] %>%
-  	fwrite("ordered_matrix.tsv", sep="\t")
+	if("$params.cols" != "null"){
+		fread("$matrix") %>% .[,c(1, clusters[["order"]] + 1)] %>%
+  	fwrite("cols_ordered_matrix.tsv", sep="\t")
+	} else{
+		fread("$matrix") %>% .[clusters[["order"]],] %>%
+  	fwrite("rows_ordered_matrix.tsv", sep="\t")
+	}
 
-	"""
-}
-
-process ordering_columns {
 	
-	input:
-	set mode, file(cluster_data) from ordering_columns.tap(log1)
-	file matrix from ordering_columns_mtx
-
-	output:
-	file "ordered_matrix.tsv"
-
-	when:
-	params.rows | params.cols
-
-	"""
-	#!/usr/bin/env Rscript
-
-	library(data.table)
-	library(magrittr)
-
-	clusters <- readRDS("$cluster_data")
-
-	fread("$matrix") %>% .[,c(1, clusters[["order"]] + 1)] %>%
-  	fwrite("ordered_matrix.tsv", sep="\t")
 
 	"""
 }
