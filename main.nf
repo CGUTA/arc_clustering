@@ -3,15 +3,13 @@
 Channel.fromPath("${params.matrix}")
 .into{ input_mtx ; ordering_mtx}
 
-
-
-process distance_matrix {
+process transpose {
 	
 	input:
 	file(matrix) from input_mtx
 
 	output:
-	file("distance.tsv") into distance
+	file "oriented_matrix.rds" into oriented_mtx
 
 	"""
 	#!/usr/bin/env Rscript
@@ -25,7 +23,34 @@ process distance_matrix {
 		essentialome = essentialome %>% melt(id.vars="V1") %>% dcast(variable ~ V1)
 	}
 
-	essentialome[,-1] %>% dist %>% as.matrix %>% as.data.table(keep.rownames=TRUE) %>% fwrite("distance.tsv", sep="\t")
+	saveRDS(essentialome, "oriented_matrix.rds")	
+
+	"""
+}
+
+oriented_mtx.into{ hclust_mtx; umap_mtx}
+
+
+process distance_matrix {
+	
+	input:
+	file(matrix) from hclust_mtx
+
+	output:
+	file("distance.tsv") into distance
+
+	when:
+	params.hclust
+
+	"""
+	#!/usr/bin/env Rscript
+
+	library(data.table)
+	library(magrittr)
+
+	data <- readRDS("$matrix")
+
+	data[,-1] %>% dist %>% as.matrix %>% as.data.table(keep.rownames=TRUE) %>% fwrite("distance.tsv", sep="\t")
 
 	"""
 }
@@ -65,6 +90,7 @@ process ordering{
 
 	output:
 	file("*_ordered_matrix.tsv")
+	file cluster_data
 
 	"""
 	#!/usr/bin/env Rscript
@@ -83,6 +109,38 @@ process ordering{
 	}
 
 	
+
+	"""
+}
+
+
+///UMAP
+process umap {
+	publishDir "$params.outdir/", mode: 'copy', saveAs: { filename -> "${params.id}_$filename" }
+	
+	input:
+	file(matrix) from umap_mtx
+
+	output:
+	file "umap.tsv"
+
+	when:
+	params.umap
+
+	"""
+	#!/usr/bin/env Rscript
+
+	library(uwot)
+	library(magrittr)
+	library(data.table)
+
+	data <- readRDS("$matrix")
+
+	umap_result <- uwot::umap(data[,-1] %>% as.matrix, $params.uwot_args)
+	
+	rownames(umap_result) <- data[[1]]
+
+	fwrite(umap_result %>% as.data.table(keep.rownames=TRUE), "umap.tsv")
 
 	"""
 }
