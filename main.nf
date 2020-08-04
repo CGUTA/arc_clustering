@@ -9,7 +9,7 @@ process transpose {
 	file(matrix) from input_mtx
 
 	output:
-	file "oriented_matrix.rds" into oriented_mtx
+	file "oriented_matrix.txt" into oriented_mtx
 
 	"""
 	#!/usr/bin/env Rscript
@@ -19,25 +19,96 @@ process transpose {
 
 	essentialome <- fread("$matrix")
 
-	if("$params.cols" != "null"){
+	if("$params.orientation" == "row"){
+		setnames(essentialome, colnames(essentialome), c("V1", colnames(essentialome)[-1]))
 		essentialome = essentialome %>% melt(id.vars="V1") %>% dcast(variable ~ V1)
 	}
 
-	saveRDS(essentialome, "oriented_matrix.rds")	
+	fwrite(essentialome, "oriented_matrix.txt", sep = "\t")
 
 	"""
 }
 
-oriented_mtx.into{ hclust_mtx; umap_mtx}
+oriented_mtx.into{ dist_mtx; umap_mtx}
 
 
 process distance_matrix {
+	publishDir "$params.outdir/", mode: 'copy', saveAs: { filename -> "${params.id}_${params.distance}_$filename" }
+	cpus params.cpus
 	
 	input:
-	file(matrix) from hclust_mtx
+	file(matrix) from dist_mtx
 
 	output:
 	file("distance.tsv") into distance
+
+	script:
+	if( ["euclidean", "maximum", "manhattan", "canberra", "binary", "minkowski"].contains(params.distance) )
+		"""
+		#!/usr/bin/env Rscript
+
+		library(data.table)
+		library(magrittr)
+
+		data <- fread("$matrix", header = TRUE)
+
+		data[,-1] %>% as.matrix %>% t %>% dist(method = "${params.distance}") %>% as.matrix %>% as.data.table(keep.rownames=TRUE) %>% fwrite("distance.tsv", sep="\t")
+
+		"""
+
+    else if( params.distance == 'oneMinusdCor' )
+        """
+        DistanceMatrix -s "$matrix" -o ${params.orientation} -d dCor --od . --of distance.tsv --rf false --lf distanceMatrixLog.txt --tc $params.cpus
+        """
+    else if( ["pearson", "spearman", "kendall"].contains(params.distance) )
+        """
+        #!/usr/bin/env Rscript
+
+		library(data.table)
+		library(magrittr)
+
+		data <- fread("$matrix", header = TRUE)
+
+		cor_matrix = data[,-1] %>% as.matrix %>% cor(method = "${params.distance}")
+		colnames(cor_matrix) <- colnames(data[, -1])
+		rownames(cor_matrix) <- colnames(data[, -1])
+		as.data.table(cor_matrix, keep.rownames=TRUE) %>% fwrite("distance.tsv", sep="\t")
+        """
+
+    else
+        error "Invalid distance parameter: ${params.distance}"
+}
+
+distance.into{ distance_cluster ; distance_print}
+
+process print_distance {
+	publishDir "$params.outdir/", mode: 'copy', saveAs: { filename -> "${params.id}_${params.distance}_$filename" }
+
+	input:
+	file(distance_matrix) from distance_print
+
+	output:
+	file distance_matrix
+
+	when:
+	params.print_distance
+
+	"""
+	echo printing
+
+	"""
+}
+
+
+
+
+process clustering {
+	
+	input:
+	file(distance_matrix) from distance_cluster
+
+	output:
+	file("clustering.rds") into clustering
 
 	when:
 	params.hclust
@@ -48,30 +119,18 @@ process distance_matrix {
 	library(data.table)
 	library(magrittr)
 
-	data <- readRDS("$matrix")
+	invert_if_cor <- function(x) {
+		if($params.distance %in% c("dCor", "spearman", "pearson", "kendall")){
+			1 - x
+		} else{
+			x
+		}	
+	}
 
-	data[,-1] %>% dist %>% as.matrix %>% as.data.table(keep.rownames=TRUE) %>% fwrite("distance.tsv", sep="\t")
-
-	"""
-}
-
-process clustering {
-	
-	input:
-	file(distance_matrix) from distance
-
-	output:
-	file("clustering.rds") into clustering
-
-	"""
-	#!/usr/bin/env Rscript
-
-	library(data.table)
-	library(magrittr)
-
-	clusters <- fread("$distance_matrix") %>% 
+	clusters <-  fread("$distance_matrix") %>% 
 	.[, -1] %>%
 	as.matrix %>%
+	invert_if_cor %>%
 	as.dist %>%
 	hclust(method = "ward.D2")
 
@@ -134,7 +193,7 @@ process umap {
 	library(magrittr)
 	library(data.table)
 
-	data <- readRDS("$matrix")
+	data <- fread("$matrix")
 
 	umap_result <- uwot::umap(data[,-1] %>% as.matrix, $params.uwot_args)
 	

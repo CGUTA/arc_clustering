@@ -4,10 +4,16 @@ Clustering pipeline
 
 Required Arguments:
 --matrix (file with delimited matrix)
---rows (should rows be clustered
---columns (should columns be clustered)
+--orientation (row or column) default column
+--distance (distance function; default euclidean
+	dCor, pearson, spearman, kendall 
+	euclidean, maximum, manhattan, canberra, binary, minkowsky)
+
+Execute
+--print_distance (print distance matrix)
+--hclust (perform hclust; cor distances become 1 - cor before clustering)
+--umap(apply umap disregarding distance function)
 
 TODO
 Allow multiple clustering methods (current is ward.D2)\
-Allow multiple distance functions (such as CLI Dcor)
 Allow umap with DBSCAn?
