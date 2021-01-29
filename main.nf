@@ -56,7 +56,7 @@ process distance_matrix {
 
 		"""
 
-    else if( params.distance == 'oneMinusdCor' )
+    else if( ["oneMinusdCor", "oneMinusdCov", "dCor", "dCov"].contains(params.distance) )
         """
         DistanceMatrix -s "$matrix" -o ${params.orientation} -d dCor --od . --of distance.tsv --rf false --lf distanceMatrixLog.txt --tc $params.cpus
         """
@@ -120,7 +120,7 @@ process clustering {
 	library(magrittr)
 
 	invert_if_cor <- function(x) {
-		if($params.distance %in% c("dCor", "spearman", "pearson", "kendall")){
+		if("$params.distance" %in% c("spearman", "pearson", "kendall")){
 			1 - x
 		} else{
 			x
@@ -159,8 +159,8 @@ process ordering{
 
 	clusters <- readRDS("$cluster_data")
 
-	if("$params.cols" != "null"){
-		fread("$matrix") %>% .[,c(1, clusters[["order"]] + 1)] %>%
+	if("$params.orientation" == "column"){
+		fread("$matrix") %>% .[,c(1, clusters[["order"]] + 1), with=FALSE] %>%
   	fwrite("cols_ordered_matrix.tsv", sep="\t")
 	} else{
 		fread("$matrix") %>% .[clusters[["order"]],] %>%

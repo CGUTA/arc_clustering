@@ -6,12 +6,12 @@ Required Arguments:
 --matrix (file with delimited matrix)
 --orientation (row or column) default column
 --distance (distance function; default euclidean
-	dCor, pearson, spearman, kendall 
+	dCor, oneMinusdCor, dCov, oneMinusdCov, pearson, spearman, kendall 
 	euclidean, maximum, manhattan, canberra, binary, minkowsky)
 
 Execute
 --print_distance (print distance matrix)
---hclust (perform hclust; cor distances become 1 - cor before clustering)
+--hclust (perform hclust; (pearson, spearman, kendall) distances become 1 - cor before clustering)
 --umap(apply umap disregarding distance function)
 
 TODO
