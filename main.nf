@@ -19,7 +19,7 @@ process transpose {
 
 	essentialome <- fread("$matrix")
 
-	if("$params.orientation" == "row"){
+	if("$params.orientation" == "column"){
 		setnames(essentialome, colnames(essentialome), c("V1", colnames(essentialome)[-1]))
 		essentialome = essentialome %>% melt(id.vars="V1") %>% dcast(variable ~ V1)
 	}
@@ -52,13 +52,13 @@ process distance_matrix {
 
 		data <- fread("$matrix", header = TRUE)
 
-		data[,-1] %>% as.matrix %>% t %>% dist(method = "${params.distance}") %>% as.matrix %>% as.data.table(keep.rownames=TRUE) %>% fwrite("distance.tsv", sep="\t")
+		data[,-1] %>% as.matrix %>% dist(method = "${params.distance}") %>% as.matrix %>% as.data.table(keep.rownames=TRUE) %>% fwrite("distance.tsv", sep="\t")
 
 		"""
 
     else if( ["oneMinusdCor", "oneMinusdCov", "dCor", "dCov"].contains(params.distance) )
         """
-        DistanceMatrix -s "$matrix" -o ${params.orientation} -d dCor --od . --of distance.tsv --rf false --lf distanceMatrixLog.txt --tc $params.cpus
+        DistanceMatrix -s "$matrix" -o row -d dCor --od . --of distance.tsv --rf false --lf distanceMatrixLog.txt --tc $params.cpus
         """
     else if( ["pearson", "spearman", "kendall"].contains(params.distance) )
         """
